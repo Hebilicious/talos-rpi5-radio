@@ -58,7 +58,7 @@ Who needs the radio:
 | R1 | The kernel is Sidero Labs' kernel at the `siderolabs/pkgs` commit the Talos release pins (`PKGS` in Talos's `Makefile`, e.g. `v1.14.0-48-gf4bda77` for v1.14.5; it is a commit, not a tag), with only these options added. As modules (`=m`): `CONFIG_RFKILL`, `CONFIG_CFG80211`, `CONFIG_BRCMFMAC`, `CONFIG_BT`, `CONFIG_BT_HCIUART`. Built in (`=y`): `CONFIG_WLAN`, `CONFIG_WLAN_VENDOR_BROADCOM`, `CONFIG_BRCMFMAC_SDIO`, `CONFIG_BT_LE`, `CONFIG_BT_HCIUART_BCM`, `CONFIG_SERIAL_DEV_BUS`, `CONFIG_SERIAL_DEV_CTRL_TTYPORT`. Plus whatever `make olddefconfig` pulls in (`CONFIG_BT_BCM`, `CONFIG_BT_HCIUART_SERDEV`, the signed-regdb options). CI fails if any listed option is missing from the final config. |
 | R2 | One system extension, `rpi5-radio`, carries: the radio's kernel modules, copied from the same kernel build (so they're signed with its key); the firmware under `/usr/lib/firmware`; and `wpa_supplicant`, run as an extension service. Firmware: `brcm/brcmfmac43455-sdio.bin` and `.clm_blob`, `brcm/brcmfmac43455-sdio.raspberrypi,5-model-b.txt`, `brcm/BCM4345C0.hcd`, and `regulatory.db` with `regulatory.db.p7s`. |
 | R3 | The Wi-Fi network name, password and country code reach `wpa_supplicant` through the machine config (an `ExtensionServiceConfig` document for the `wpa_supplicant` service), never through the image or this repository. |
-| R4 | Talos's network configuration runs DHCP on the Wi-Fi link once it associates. The link is selected with a `deviceSelector` on `driver: brcmfmac`, never by an assumed name such as `wlan0`. Ethernet stays the preferred route when both are up (a higher route metric on Wi-Fi). The machine config loads `brcmfmac-wcc` with a `KernelModuleConfig` document (section 5, "Modules, not built in"). |
+| R4 | Talos's network configuration runs DHCP on the Wi-Fi link once it associates. The link is selected with a `deviceSelector` on `driver: brcmfmac`, never by an assumed name such as `wlan0`. Ethernet stays the preferred route when both are up (a higher route metric on Wi-Fi). |
 | R5 | BlueZ runs in a privileged pod on the host network, because the kernel only creates Bluetooth sockets in the host's network namespace. Talos has no system D-Bus, so the pod runs its own `dbus-daemon` beside `bluetoothd` and shares the D-Bus socket with the pods that use it through a `hostPath` under `/var`. A workload may instead talk HCI directly, with `hostNetwork` and `NET_ADMIN`/`NET_RAW`. The image and manifests live in this repository. |
 | R6 | CI in this repository rebuilds the kernel, the extension, the installer and the SD card image for each release in scope (Goal 4), on GitHub's arm64 runners, and publishes them as public images on GitHub Container Registry. |
 | R7 | Nothing else about Talos changes: same Talos source, same kernel command line (including `module.sig_enforce=1`), same upgrade and rollback behaviour. Only the kernel image differs. Because each kernel build signs its modules with a key it then throws away, official extensions that ship kernel modules don't load on this kernel; that is accepted and documented in the README. |
@@ -108,8 +108,10 @@ PRD.md                          this document
 - **Kernel:** `make kernel PLATFORM=linux/arm64 REGISTRY=ghcr.io
   USERNAME=hebilicious/talos-rpi5-radio PUSH=true`. The build runs Sidero's
   `kernel-hardening-checker` filter; the new options must pass it unchanged.
-- **Talos:** `make installer-base imager PLATFORM=linux/arm64 PKG_KERNEL=<our kernel image>
-  REGISTRY=ghcr.io USERNAME=hebilicious/talos-rpi5-radio PUSH=true`. Nothing else is overridden.
+- **Talos:** `make installer-base imager PLATFORM=linux/arm64 INSTALLER_ARCH=targetarch
+  PKG_KERNEL=<our kernel image> REGISTRY=ghcr.io USERNAME=hebilicious/talos-rpi5-radio PUSH=true`.
+  `INSTALLER_ARCH` defaults to `all`, which would also build amd64 boot assets from a kernel we
+  publish only for arm64. Nothing else is overridden.
 - **Extension:** copy from our kernel image's `/usr/lib/modules/<version>/kernel/` the modules of
   `net/rfkill`, `net/wireless`, `net/bluetooth`, `drivers/net/wireless/broadcom/brcm80211` and
   `drivers/bluetooth` that the R1 options produce, with their dependencies. Add the firmware, and
@@ -162,10 +164,11 @@ during kernel boot can't see them.
 - **Modules** are loaded by udev from their device aliases after the extensions are mounted, so
   the firmware is in place. The serial-bus options are booleans and stay built in. That only
   creates the Bluetooth device; its driver loads later.
-- **One exception:** Talos's kernel has `CONFIG_MODPROBE_PATH=""`, so the kernel can't load
-  modules itself. A modular `brcmfmac` asks the kernel for its vendor module (`brcmfmac-wcc` for
-  the 43455), which would fail. The machine config loads `brcmfmac-wcc` with a
-  `KernelModuleConfig` document; that load pulls in `brcmfmac` and `cfg80211`.
+- **Modules the kernel asks for:** a modular `brcmfmac` asks the kernel for its vendor module
+  (`brcmfmac-wcc` for the 43455) with `request_module()`. The kernel is built with
+  `CONFIG_MODPROBE_PATH=""`, but Talos sets `kernel.modprobe` to its own helper at run time, which
+  loads requests by plain module name (it doesn't resolve aliases). So `brcmfmac-wcc` loads on
+  demand; milestone 2 checks that it does.
 
 The kernel asks for these firmware names, board-specific first:
 `brcm/brcmfmac43455-sdio.raspberrypi,5-model-b.{bin,clm_blob,txt}`, then
@@ -191,7 +194,7 @@ network, so the first boot uses Ethernet:
 
 1. Flash the SD card image and boot the Pi on Ethernet.
 2. Apply a machine config with the `wpa_supplicant` `ExtensionServiceConfig`, the Wi-Fi link's DHCP
-   settings and the `KernelModuleConfig` (`examples/machine-config.yaml`).
+   settings (`examples/machine-config.yaml`).
 3. Once Wi-Fi has an address, Ethernet can be unplugged.
 
 Talos's `talos.config.inline` and `talos.config.early` kernel arguments could carry the
@@ -204,7 +207,11 @@ credentials for a Wi-Fi-only first boot, but that puts them on the boot media; i
 2. CI builds the pull request; merging it publishes the installer at the same version.
 3. Users upgrade with `talosctl upgrade --image ghcr.io/hebilicious/talos-rpi5-radio/installer:<release>`.
    The upgrade keeps the kernel command line, including `module.sig_enforce`.
-4. If a node doesn't come back, Talos boots the previous version (A/B boot).
+4. Talos keeps the previous version on its other boot entry. If the new version boots but Talos
+   fails before the machine reaches Running, Talos switches back to the previous entry itself.
+   If the kernel hangs, or the node boots but is unreachable (for example Wi-Fi doesn't come up),
+   nothing switches back automatically: recover over Ethernet with `talosctl rollback`, or pick
+   the previous entry in GRUB from a keyboard and screen.
 
 ### Licences
 
@@ -229,7 +236,7 @@ connected.
 4. **Bluetooth.** The BlueZ pod scans and reads a GATT characteristic of a nearby device, and a
    second pod does the same through the shared D-Bus socket.
 5. **CI and upgrades.** The workflow builds a release end to end from a Renovate pull request; one
-   upgrade and one rollback on a real Pi 5.
+   upgrade on a real Pi 5, and one recovery by the manual procedure of section 5, "Upgrades".
 
 ## 7. Done when
 
@@ -245,7 +252,8 @@ connected.
 | The Wi-Fi and Bluetooth stacks add attack surface to the node (Sidero's reason for declining them) | Only nodes that run this installer carry them; the README says so |
 | A future overlay drops or changes the radio nodes | CI decompiles the pinned overlay's Pi 5 device trees and fails if the nodes of section 5 are missing |
 | The firmware loads before the extension is mounted | Radio stacks are modules (R1); milestone 2 checks the "Patch" line |
-| `brcmfmac` can't load its vendor module (`CONFIG_MODPROBE_PATH=""`) | `KernelModuleConfig` for `brcmfmac-wcc` in the machine config (R4) |
+| `brcmfmac` can't load its vendor module | Talos's helper loads it by name; milestone 2 checks it, and a `KernelModuleConfig` for `brcmfmac-wcc` is the fallback |
+| An upgrade leaves the node hung or unreachable | Manual recovery over Ethernet or the GRUB menu (section 5, "Upgrades") |
 | Users add an official extension with kernel modules | Non-goal; README lists it; the module fails signature checks and Talos reports it |
 | A new option fails Sidero's hardening check, or `olddefconfig` drops one | `kernel/check-config.sh` and the build fail loudly; users stay on the previous release |
 | Talos changes its build between releases | Pinned tags and commits; CI fails loudly and users stay on the previous release |
