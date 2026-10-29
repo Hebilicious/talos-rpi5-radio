@@ -1,17 +1,19 @@
 # Extension service: wpa_supplicant for the Pi 5's Wi-Fi.
 # Its configuration file comes from an ExtensionServiceConfig document named
-# wpa_supplicant, mounted at /etc/wpa_supplicant/wpa_supplicant.conf.
+# wpa_supplicant, mounted at /etc/wpa_supplicant/wpa_supplicant.conf. Without one the
+# service idles (start-wpa-supplicant): Talos holds the boot until every service is up, so
+# waiting for the document (`depends: configuration`) would keep a node without Wi-Fi in
+# "booting" until the boot timeout.
 name: wpa_supplicant
-depends:
-  - configuration: true
 container:
   entrypoint: /usr/local/bin/start-wpa-supplicant
   mounts:
-    - source: tmpfs
-      destination: /run
-      type: tmpfs
+    # The control socket. Talos creates each mount's source on the host (/run is a tmpfs there);
+    # a `source: tmpfs` mount fails with "mkdir tmpfs: read-only file system".
+    - source: /run/wpa_supplicant
+      destination: /run/wpa_supplicant
+      type: bind
       options:
-        - nosuid
-        - nodev
-        - mode=0755
+        - rbind
+        - rw
 restart: always

@@ -14,6 +14,15 @@ find_link() {
   done
 }
 
+conf=/etc/wpa_supplicant/wpa_supplicant.conf
+
+# No ExtensionServiceConfig: no Wi-Fi. Idle, so the service is up and the boot finishes; a
+# config applied later restarts the service.
+if [ ! -f "$conf" ]; then
+  echo "no $conf: Wi-Fi not configured"
+  while :; do sleep 3600; done
+fi
+
 link=$(find_link)
 
 while [ -z "$link" ]; do
@@ -23,6 +32,4 @@ done
 
 echo "running wpa_supplicant on $link"
 
-mkdir -p /run/wpa_supplicant
-
-exec wpa_supplicant -D nl80211 -i "$link" -c /etc/wpa_supplicant/wpa_supplicant.conf
+exec wpa_supplicant -D nl80211 -i "$link" -c "$conf"
