@@ -1,7 +1,7 @@
 # PRD: Talos Linux with Wi-Fi and Bluetooth on the Raspberry Pi 5
 
-Status: draft, 29 October 2026, audited against Talos v1.14.5. Milestone 1 is done (section 5);
-nothing else is built yet. This is the spec to build from.
+Status: 30 October 2026, built against Talos v1.14.5. Milestones 1 and 2 are done (sections 5
+and 6); the rest is not yet built.
 
 ## 1. Problem
 
@@ -107,7 +107,10 @@ PRD.md                          this document
   `kernel/check-config.sh`.
 - **Kernel:** `make kernel PLATFORM=linux/arm64 REGISTRY=ghcr.io
   USERNAME=hebilicious/talos-rpi5-radio PUSH=true`. The build runs Sidero's
-  `kernel-hardening-checker` filter; the new options must pass it unchanged.
+  `kernel-hardening-checker` filter; the new options must pass it unchanged. The compile takes
+  about 75 minutes on a GitHub arm64 runner, so the image is tagged by its inputs
+  (`kernel:pkgs-<commit>-radio-<fragment hash>`) and built only when that tag is missing; other
+  runs reuse it, and a whole run then takes about 8 minutes.
 - **Talos:** `make installer-base imager PLATFORM=linux/arm64 INSTALLER_ARCH=targetarch
   PKG_KERNEL=<our kernel image> REGISTRY=ghcr.io USERNAME=hebilicious/talos-rpi5-radio PUSH=true`.
   `INSTALLER_ARCH` defaults to `all`, which would also build amd64 boot assets from a kernel we
@@ -222,13 +225,17 @@ them in `extension/firmware/`.
 
 ## 6. Milestones
 
-Hardware tests use a Pi 5 booted from an SD card set aside for this project, with Ethernet
-connected.
+Hardware tests use a Pi 5 with Ethernet connected. Until an SD card is set aside for this
+project, they boot the build once from RAM on a Pi 5 running Raspberry Pi OS, through the
+firmware's tryboot, with the SD card hidden from the kernel (`hack/tryboot/`).
 
 1. **Device tree.** Done: section 5.
 2. **Kernel boots.** Our kernel with the options, built on GitHub's arm64 runners, and the
-   extension, booted from an SD card: `talosctl dmesg` shows `brcmfmac` loading its firmware and
-   `hci0` loading `BCM4345C0.hcd` ("Patch").
+   extension: the kernel log shows `brcmfmac` loading its firmware and `hci0` loading
+   `BCM4345C0.hcd` ("Patch"). Done on 30 October 2026 (CI run 40923102812, tryboot on a Pi 5
+   Rev 1.1): `rpi5-radio` enabled; `hci0` patched from build 0000 to 0382; `brcmfmac` running
+   firmware 7.45.286 (CY), with `brcmfmac-wcc` loaded on demand by Talos's modprobe helper; the
+   Wi-Fi link is `wld0`; `wpa_supplicant` waits for its `ExtensionServiceConfig`.
 3. **Wi-Fi.** The extension's `wpa_supplicant` associates with a WPA2 network, and with a WPA3
    network if the firmware supports it (otherwise the README says WPA2 only). The Wi-Fi link gets
    an address, and with Ethernet unplugged the node stays reachable. The link's real name is

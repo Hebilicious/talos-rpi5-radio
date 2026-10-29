@@ -9,7 +9,8 @@
 # maintenance mode.
 #
 # usage: stage.sh <artifacts dir> <dtb dir> <ssh host> <log ip>
-#   artifacts dir: kernel-arm64, initramfs-arm64.xz, cmdline-metal-arm64 (CI artifact)
+#   artifacts dir: the CI artifact: kernel-arm64, initramfs-metal-arm64.xz and
+#                  cmdline-metal-arm64, each optionally zstd-compressed (.zst)
 #   dtb dir:       the rpi_5 overlay's bcm2712*.dtb (artifacts/rpi_5 in the overlay image)
 #   log ip:        this machine's address on the Pi's Ethernet network. The kernel
 #                  sends its console there from boot (netconsole, UDP 6666), and
@@ -31,13 +32,26 @@ here=$(cd "$(dirname "$0")" && pwd)
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 
-python3 -I "$here/extract-image.py" "$artifacts/kernel-arm64" "$work/Image"
-cp "$artifacts/initramfs-arm64.xz" "$work/initramfs.xz"
+# the imager compresses its outputs with zstd
+asset() {
+  if [[ -f $artifacts/$1.zst ]]; then
+    zstd -q -d -c "$artifacts/$1.zst" > "$2"
+  else
+    cp "$artifacts/$1" "$2"
+  fi
+}
+
+asset kernel-arm64 "$work/vmlinuz"
+asset initramfs-metal-arm64.xz "$work/initramfs.xz"
+asset cmdline-metal-arm64 "$work/cmdline-metal-arm64"
+
+python3 -I "$here/extract-image.py" "$work/vmlinuz" "$work/Image"
+rm "$work/vmlinuz"
 cp "$dtbs"/bcm2712*.dtb "$work/"
 cp "$here/tryboot-overlay.dts" "$work/"
 
 # Talos's own kernel arguments, plus the two log streams and a reboot on panic.
-echo "$(cat "$artifacts/cmdline-metal-arm64") talos.logging.kernel=udp://${log_ip}:5140" \
+echo "$(cat "$work/cmdline-metal-arm64") talos.logging.kernel=udp://${log_ip}:5140" \
   "netconsole=6665@${pi_ip}/eth0,6666@${log_ip}/${log_mac} panic=30" > "$work/cmdline.txt"
 
 cat > "$work/tryboot.txt" <<'TXT'
