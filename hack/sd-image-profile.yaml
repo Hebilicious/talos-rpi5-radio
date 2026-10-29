@@ -1,0 +1,37 @@
+# Imager profile for the SD card image (metal-arm64.raw). The imager reads it on stdin:
+#   envsubst < hack/sd-image-profile.yaml | docker run --rm -i --privileged -v /dev:/dev \
+#     -v "$PWD/_out:/out" ${IMAGE_PREFIX}/imager:<release> -
+# with IMAGE_PREFIX (ghcr.io/hebilicious/talos-rpi5-radio), TAG (our images' tag), TALOS (the Talos
+# release) and OVERLAY_IMAGE (hack/pins.sh) set.
+#
+# bootloader: grub is the point of this file. The imager's `metal` profile picks sd-boot for
+# arm64, and sd-boot images skip the overlay installer: the card then has no Pi firmware files,
+# config.txt, U-Boot or device trees, and a Pi 5 doesn't boot it. Image Factory builds rpi_5
+# images with GRUB too. The command line has no flag for the bootloader.
+arch: arm64
+platform: metal
+version: ${TALOS}
+input:
+  kernel:
+    path: /usr/install/arm64/vmlinuz
+  initramfs:
+    path: /usr/install/arm64/initramfs.xz
+  sdStub:
+    path: /usr/install/arm64/systemd-stub.efi
+  sdBoot:
+    path: /usr/install/arm64/systemd-boot.efi
+  baseInstaller:
+    imageRef: ${IMAGE_PREFIX}/installer-base:${TAG}
+  systemExtensions:
+    - imageRef: ${IMAGE_PREFIX}/rpi5-radio:${TAG}
+overlay:
+  name: rpi_5
+  image:
+    imageRef: ${OVERLAY_IMAGE}
+output:
+  kind: image
+  imageOptions:
+    diskSize: 2355101696
+    diskFormat: raw
+    bootloader: grub
+  outFormat: .zst

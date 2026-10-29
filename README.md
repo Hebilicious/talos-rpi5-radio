@@ -42,9 +42,12 @@ imager_args=(
 )
 imager=ghcr.io/hebilicious/talos-rpi5-radio/imager:v1.14.5
 
-# SD card image for the first install (_out/metal-arm64.raw.zst)
-docker run --rm --privileged --platform linux/arm64 -v /dev:/dev -v "$PWD/_out:/out" \
-  "$imager" metal "${imager_args[@]}"
+# SD card image for the first install (_out/metal-arm64.raw.zst), from hack/sd-image-profile.yaml:
+# not `imager metal`, see below. Add official extensions under its systemExtensions.
+export IMAGE_PREFIX=ghcr.io/hebilicious/talos-rpi5-radio TAG=v1.14.5 TALOS=v1.14.5 \
+  OVERLAY_IMAGE=ghcr.io/siderolabs/sbc-raspberrypi:v0.2.2@sha256:af82d9f97241fb66c5b660b03e9154fd54ba4560b58ed3b53765bb930d564167
+envsubst < hack/sd-image-profile.yaml \
+  | docker run --rm -i --privileged --platform linux/arm64 -v /dev:/dev -v "$PWD/_out:/out" "$imager" -
 
 # installer for upgrades (_out/installer-arm64.tar; push it to a registry the node can pull)
 docker run --rm --platform linux/arm64 -v "$PWD/_out:/out" \
@@ -55,6 +58,10 @@ docker run --rm --platform linux/arm64 -v "$PWD/_out:/out" \
 On an x86_64 machine `--platform linux/arm64` runs the imager under QEMU; the installer above
 takes about a minute and a half.
 
+- **SD card image:** `imager metal` makes an image that doesn't boot on a Pi 5. For arm64 it
+  picks the sd-boot loader, which skips the overlay's installer, so the card gets no Pi firmware
+  files, `config.txt`, U-Boot or device trees. The profile sets `bootloader: grub`, as Image Factory
+  does for `rpi_5`; no command-line flag sets it. Checked on a Pi 5, 2026-10-30.
 - **Installer image:** point the machine config's installer image at an installer built this way
   (or at `installer:<release>` without extra extensions), and upgrade with
   `talosctl upgrade --image <it>`. An Image Factory installer would bring back Sidero's kernel,
