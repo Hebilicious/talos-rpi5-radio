@@ -1,0 +1,28 @@
+#!/bin/sh
+# Waits for the network link driven by brcmfmac, then runs wpa_supplicant on it.
+# The link is found by driver, because its name isn't fixed (PRD R4).
+set -eu
+
+find_link() {
+  for link in /sys/class/net/*; do
+    driver=$(readlink -f "$link/device/driver" 2>/dev/null || true)
+
+    if [ "$(basename "${driver:-none}")" = brcmfmac ]; then
+      basename "$link"
+      return
+    fi
+  done
+}
+
+link=$(find_link)
+
+while [ -z "$link" ]; do
+  sleep 2
+  link=$(find_link)
+done
+
+echo "running wpa_supplicant on $link"
+
+mkdir -p /run/wpa_supplicant
+
+exec wpa_supplicant -D nl80211 -i "$link" -c /etc/wpa_supplicant/wpa_supplicant.conf

@@ -1,0 +1,21 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "The Talos release this repository builds (PRD Goal 4)",
+      "managerFilePatterns": ["/^talos-version$/"],
+      "matchStrings": ["^(?<currentValue>v\\d+\\.\\d+\\.\\d+)\\s*$"],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "siderolabs/talos"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "Stable releases only",
+      "matchDepNames": ["siderolabs/talos"],
+      "ignoreUnstable": true
+    }
+  ]
+}

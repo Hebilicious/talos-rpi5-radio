@@ -1,0 +1,11 @@
+version: v1alpha1
+metadata:
+  name: rpi5-radio
+  version: "@VERSION@"
+  author: Hebilicious
+  description: |
+    Wi-Fi and Bluetooth for the Raspberry Pi 5: the radio's kernel modules (built with the
+    talos-rpi5-radio kernel), its firmware, and wpa_supplicant as an extension service.
+  compatibility:
+    talos:
+      version: ">= v1.14.0"

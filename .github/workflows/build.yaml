@@ -1,0 +1,197 @@
+# Builds the kernel, the rpi5-radio extension, Talos's installer-base and imager,
+# and the Pi 5 boot assets, installer and SD card image for the Talos release in
+# talos-version (PRD section 5, "Building").
+#
+# Every run publishes its images under the tag <release>-<commit>; runs on main
+# also publish <release>, the tag users upgrade to.
+name: build
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMAGE_PREFIX: ghcr.io/hebilicious/talos-rpi5-radio
+  REGISTRY_USERNAME: hebilicious/talos-rpi5-radio
+
+jobs:
+  pins:
+    runs-on: ubuntu-24.04-arm
+    outputs:
+      talos: ${{ steps.pins.outputs.TALOS }}
+      pkgs: ${{ steps.pins.outputs.PKGS }}
+      pkgs-commit: ${{ steps.pins.outputs.PKGS_COMMIT }}
+      overlay-image: ${{ steps.pins.outputs.OVERLAY_IMAGE }}
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - id: pins
+        run: hack/pins.sh "$(cat talos-version)" | tee -a "$GITHUB_OUTPUT"
+
+      - id: tag
+        run: echo "tag=${{ steps.pins.outputs.TALOS }}-${GITHUB_SHA::7}" | tee -a "$GITHUB_OUTPUT"
+
+  kernel:
+    needs: pins
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 300
+    steps:
+      - name: Free disk space for the build
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/hostedtoolcache /usr/local/.ghcup
+          df -h /
+
+      - uses: actions/checkout@v5
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check out siderolabs/pkgs at the commit Talos pins
+        run: |
+          git clone --filter=blob:none https://github.com/siderolabs/pkgs.git _pkgs
+          git -C _pkgs checkout --detach "${{ needs.pins.outputs.pkgs-commit }}"
+
+      - name: Add the radio options and run olddefconfig
+        working-directory: _pkgs
+        run: |
+          cat ../kernel/config-radio.fragment >> kernel/build/config-arm64
+          make local-kernel-build \
+            TARGET_ARGS="--build-arg=KERNEL_TARGET=olddefconfig" \
+            PLATFORM=linux/arm64 DEST=kernel/build
+          ../kernel/check-config.sh ../kernel/config-radio.fragment kernel/build/config-arm64
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kernel-config-arm64
+          path: _pkgs/kernel/build/config-arm64
+
+      - name: Build and push the kernel
+        working-directory: _pkgs
+        run: |
+          make kernel PLATFORM=linux/arm64 PUSH=true \
+            REGISTRY=ghcr.io USERNAME="$REGISTRY_USERNAME" TAG="${{ needs.pins.outputs.tag }}"
+
+  extension:
+    needs: [pins, kernel]
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: extension
+          platforms: linux/arm64
+          provenance: false
+          sbom: false
+          push: true
+          tags: ${{ env.IMAGE_PREFIX }}/rpi5-radio:${{ needs.pins.outputs.tag }}
+          build-args: |
+            KERNEL_IMAGE=${{ env.IMAGE_PREFIX }}/kernel:${{ needs.pins.outputs.tag }}
+            LINUX_FIRMWARE_IMAGE=ghcr.io/siderolabs/linux-firmware:${{ needs.pins.outputs.pkgs }}
+            VERSION=${{ needs.pins.outputs.talos }}
+
+  talos:
+    needs: [pins, kernel]
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 180
+    steps:
+      - name: Free disk space for the build
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/hostedtoolcache /usr/local/.ghcup
+          df -h /
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check out siderolabs/talos at the release tag
+        run: git clone --depth=1 --branch "${{ needs.pins.outputs.talos }}" https://github.com/siderolabs/talos.git _talos
+
+      - name: Build and push installer-base and imager with our kernel
+        working-directory: _talos
+        run: |
+          make installer-base imager PLATFORM=linux/arm64 INSTALLER_ARCH=targetarch PUSH=true \
+            PKG_KERNEL="$IMAGE_PREFIX/kernel:${{ needs.pins.outputs.tag }}" \
+            REGISTRY=ghcr.io USERNAME="$REGISTRY_USERNAME" \
+            TAG_SUFFIX_OUT="-${GITHUB_SHA::7}"
+
+  images:
+    needs: [pins, extension, talos]
+    runs-on: ubuntu-24.04-arm
+    env:
+      TAG: ${{ needs.pins.outputs.tag }}
+      IMAGER_ARGS: >-
+        --arch arm64
+        --overlay-image ${{ needs.pins.outputs.overlay-image }}
+        --overlay-name rpi_5
+        --system-extension-image ghcr.io/hebilicious/talos-rpi5-radio/rpi5-radio:${{ needs.pins.outputs.tag }}
+    steps:
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build the boot assets, the SD card image and the installer
+        run: |
+          mkdir -p _out
+          imager() {
+            docker run --rm --privileged -v /dev:/dev -v "$PWD/_out:/out" \
+              -v "$HOME/.docker/config.json:/root/.docker/config.json:ro" \
+              "$IMAGE_PREFIX/imager:$TAG" "$@"
+          }
+
+          for kind in kernel initramfs cmdline; do
+            imager metal $IMAGER_ARGS --output-kind "$kind"
+          done
+          imager metal $IMAGER_ARGS
+          imager installer $IMAGER_ARGS --base-installer-image "$IMAGE_PREFIX/installer-base:$TAG"
+          ls -la _out
+
+      - uses: imjasonh/setup-crane@v0.4
+
+      - name: Push the installer
+        run: |
+          crane push _out/installer-arm64.tar "$IMAGE_PREFIX/installer:$TAG"
+          if [[ $GITHUB_REF == refs/heads/main ]]; then
+            for image in kernel rpi5-radio installer-base imager installer; do
+              crane tag "$IMAGE_PREFIX/$image:$TAG" "${{ needs.pins.outputs.talos }}"
+            done
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: talos-rpi5-radio-${{ needs.pins.outputs.tag }}
+          path: |
+            _out/kernel-arm64
+            _out/initramfs-arm64.xz
+            _out/cmdline-metal-arm64
+            _out/metal-arm64.raw.zst
+            _out/metal-arm64.raw.xz
+          if-no-files-found: warn

@@ -1,0 +1,21 @@
+Origin of the rpi5-radio extension's firmware (PRD section 5, "Firmware sources").
+
+Taken at build time from Sidero's linux-firmware image at the pkgs commit Talos pins
+(ghcr.io/siderolabs/linux-firmware:<PKGS>; linux-firmware 20260916 for Talos v1.14.5):
+  brcm/brcmfmac43455-sdio.bin       <- cypress/cyfmac43455-sdio.bin          LICENCE.cypress
+  brcm/brcmfmac43455-sdio.clm_blob  <- cypress/cyfmac43455-sdio.clm_blob     LICENCE.cypress
+  brcm/brcmfmac43455-sdio.raspberrypi,5-model-b.txt
+                                    <- brcm/brcmfmac43455-sdio.raspberrypi,4-model-b.txt
+                                                                             GPL-2.0 (per WHENCE)
+
+Committed in this directory:
+  BCM4345C0.hcd  RPi-Distro/bluez-firmware cdf61dc691a49ff01a124752bd04194907f0f9cd
+                 debian/firmware/broadcom/BCM4345C0.hcd                      LICENCE.cypress
+                 sha256 51c45e77ddad91a19e96dc8fb75295b2087c279940df2634b23baf71b6dea42c
+  regulatory.db, regulatory.db.p7s
+                 wireless-regdb 2026.09.03 (mirrors.kernel.org, tarball sha256
+                 b22e0901227b820cd1c280abe681a15b773a5103a5e10dc442e94ebb34cbf58d)  LICENSE.wireless-regdb
+                 regulatory.db     sha256 7e236caecd939c8ec98be4870bf30422f28ffef2565a38aaaa2d9ddabd0c2641
+                 regulatory.db.p7s sha256 50332f0db09b8bcc719235ec4985c27377f2cc2f42abb7b5dcf951866c5a888a
+
+LICENCE.cypress and GPL-2.0 are copied from linux-firmware's LICENSES/ at 20260916.

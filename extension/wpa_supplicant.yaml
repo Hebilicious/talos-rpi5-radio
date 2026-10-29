@@ -1,0 +1,17 @@
+# Extension service: wpa_supplicant for the Pi 5's Wi-Fi.
+# Its configuration file comes from an ExtensionServiceConfig document named
+# wpa_supplicant, mounted at /etc/wpa_supplicant/wpa_supplicant.conf.
+name: wpa_supplicant
+depends:
+  - configuration: true
+container:
+  entrypoint: /usr/local/bin/start-wpa-supplicant
+  mounts:
+    - source: tmpfs
+      destination: /run
+      type: tmpfs
+      options:
+        - nosuid
+        - nodev
+        - mode=0755
+restart: always
