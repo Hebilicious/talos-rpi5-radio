@@ -217,10 +217,10 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: talos-rpi5-radio-${{ needs.pins.outputs.tag }}
+          # the imager compresses every output with zstd
           path: |
-            _out/kernel-arm64
-            _out/initramfs-arm64.xz
-            _out/cmdline-metal-arm64
+            _out/kernel-arm64.zst
+            _out/initramfs-metal-arm64.xz.zst
+            _out/cmdline-metal-arm64.zst
             _out/metal-arm64.raw.zst
-            _out/metal-arm64.raw.xz
-          if-no-files-found: warn
+          if-no-files-found: error
