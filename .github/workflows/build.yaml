@@ -4,6 +4,10 @@
 #
 # Every run publishes its images under the tag <release>-<commit>; runs on main
 # also publish <release>, the tag users upgrade to.
+#
+# The kernel is the slow part (over an hour). Its image is tagged by its inputs,
+# the pkgs commit and the radio fragment, and is only built when no image with
+# that tag exists yet, so most runs reuse it.
 name: build
 
 on:
@@ -31,6 +35,7 @@ jobs:
       pkgs-commit: ${{ steps.pins.outputs.PKGS_COMMIT }}
       overlay-image: ${{ steps.pins.outputs.OVERLAY_IMAGE }}
       tag: ${{ steps.tag.outputs.tag }}
+      kernel-image: ${{ steps.tag.outputs.kernel-image }}
     steps:
       - uses: actions/checkout@v5
 
@@ -38,34 +43,55 @@ jobs:
         run: hack/pins.sh "$(cat talos-version)" | tee -a "$GITHUB_OUTPUT"
 
       - id: tag
-        run: echo "tag=${{ steps.pins.outputs.TALOS }}-${GITHUB_SHA::7}" | tee -a "$GITHUB_OUTPUT"
+        run: |
+          echo "tag=${{ steps.pins.outputs.TALOS }}-${GITHUB_SHA::7}" | tee -a "$GITHUB_OUTPUT"
+          fragment=$(sha256sum kernel/config-radio.fragment | cut -c1-12)
+          echo "kernel-image=$IMAGE_PREFIX/kernel:pkgs-${{ steps.pins.outputs.PKGS_COMMIT }}-radio-${fragment}" | tee -a "$GITHUB_OUTPUT"
 
   kernel:
     needs: pins
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 300
+    env:
+      KERNEL_IMAGE: ${{ needs.pins.outputs.kernel-image }}
     steps:
-      - name: Free disk space for the build
-        run: |
-          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/hostedtoolcache /usr/local/.ghcup
-          df -h /
-
-      - uses: actions/checkout@v5
-
-      - uses: docker/setup-buildx-action@v3
-
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Look for a kernel built from the same inputs
+        id: existing
+        run: |
+          if docker manifest inspect "$KERNEL_IMAGE" >/dev/null 2>&1; then
+            echo "reusing $KERNEL_IMAGE"
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "building $KERNEL_IMAGE"
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Free disk space for the build
+        if: steps.existing.outputs.found != 'true'
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/hostedtoolcache /usr/local/.ghcup
+          df -h /
+
+      - uses: actions/checkout@v5
+        if: steps.existing.outputs.found != 'true'
+
+      - uses: docker/setup-buildx-action@v3
+        if: steps.existing.outputs.found != 'true'
+
       - name: Check out siderolabs/pkgs at the commit Talos pins
+        if: steps.existing.outputs.found != 'true'
         run: |
           git clone --filter=blob:none https://github.com/siderolabs/pkgs.git _pkgs
           git -C _pkgs checkout --detach "${{ needs.pins.outputs.pkgs-commit }}"
 
       - name: Add the radio options and run olddefconfig
+        if: steps.existing.outputs.found != 'true'
         working-directory: _pkgs
         run: |
           cat ../kernel/config-radio.fragment >> kernel/build/config-arm64
@@ -75,15 +101,17 @@ jobs:
           ../kernel/check-config.sh ../kernel/config-radio.fragment kernel/build/config-arm64
 
       - uses: actions/upload-artifact@v4
+        if: steps.existing.outputs.found != 'true'
         with:
           name: kernel-config-arm64
           path: _pkgs/kernel/build/config-arm64
 
       - name: Build and push the kernel
+        if: steps.existing.outputs.found != 'true'
         working-directory: _pkgs
         run: |
           make kernel PLATFORM=linux/arm64 PUSH=true \
-            REGISTRY=ghcr.io USERNAME="$REGISTRY_USERNAME" TAG="${{ needs.pins.outputs.tag }}"
+            REGISTRY=ghcr.io USERNAME="$REGISTRY_USERNAME" TAG="${KERNEL_IMAGE##*:}"
 
   extension:
     needs: [pins, kernel]
@@ -108,7 +136,7 @@ jobs:
           push: true
           tags: ${{ env.IMAGE_PREFIX }}/rpi5-radio:${{ needs.pins.outputs.tag }}
           build-args: |
-            KERNEL_IMAGE=${{ env.IMAGE_PREFIX }}/kernel:${{ needs.pins.outputs.tag }}
+            KERNEL_IMAGE=${{ needs.pins.outputs.kernel-image }}
             LINUX_FIRMWARE_IMAGE=ghcr.io/siderolabs/linux-firmware:${{ needs.pins.outputs.pkgs }}
             VERSION=${{ needs.pins.outputs.talos }}
 
@@ -137,7 +165,7 @@ jobs:
         working-directory: _talos
         run: |
           make installer-base imager PLATFORM=linux/arm64 INSTALLER_ARCH=targetarch PUSH=true \
-            PKG_KERNEL="$IMAGE_PREFIX/kernel:${{ needs.pins.outputs.tag }}" \
+            PKG_KERNEL="${{ needs.pins.outputs.kernel-image }}" \
             REGISTRY=ghcr.io USERNAME="$REGISTRY_USERNAME" \
             TAG_SUFFIX_OUT="-${GITHUB_SHA::7}"
 
@@ -180,9 +208,10 @@ jobs:
         run: |
           crane push _out/installer-arm64.tar "$IMAGE_PREFIX/installer:$TAG"
           if [[ $GITHUB_REF == refs/heads/main ]]; then
-            for image in kernel rpi5-radio installer-base imager installer; do
+            for image in rpi5-radio installer-base imager installer; do
               crane tag "$IMAGE_PREFIX/$image:$TAG" "${{ needs.pins.outputs.talos }}"
             done
+            crane tag "${{ needs.pins.outputs.kernel-image }}" "${{ needs.pins.outputs.talos }}"
           fi
 
       - uses: actions/upload-artifact@v4
