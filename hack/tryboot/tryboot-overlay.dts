@@ -1,0 +1,16 @@
+// Hides the SD card controller (sdio1) from the kernel during a tryboot test
+// boot, so it can't touch the card the Pi booted from. The Wi-Fi controller
+// (sdio2) stays enabled.
+/dts-v1/;
+/plugin/;
+
+/ {
+	compatible = "brcm,bcm2712";
+
+	fragment@0 {
+		target = <&sdio1>;
+		__overlay__ {
+			status = "disabled";
+		};
+	};
+};
