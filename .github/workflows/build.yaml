@@ -207,7 +207,7 @@ jobs:
           imager installer $IMAGER_ARGS --base-installer-image "$IMAGE_PREFIX/installer-base:$TAG"
           ls -la _out
 
-      - uses: imjasonh/setup-crane@v0.4
+      - uses: imjasonh/setup-crane@v0.7
 
       - name: Push the installer
         run: |
