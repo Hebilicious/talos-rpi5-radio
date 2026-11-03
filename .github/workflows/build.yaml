@@ -37,7 +37,7 @@ jobs:
       tag: ${{ steps.tag.outputs.tag }}
       kernel-image: ${{ steps.tag.outputs.kernel-image }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - id: pins
         run: hack/pins.sh "$(cat talos-version)" | tee -a "$GITHUB_OUTPUT"
@@ -78,7 +78,7 @@ jobs:
           sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/hostedtoolcache /usr/local/.ghcup
           df -h /
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         if: steps.existing.outputs.found != 'true'
 
       - uses: docker/setup-buildx-action@v3
@@ -117,7 +117,7 @@ jobs:
     needs: [pins, kernel]
     runs-on: ubuntu-24.04-arm
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: docker/setup-buildx-action@v3
 
@@ -188,7 +188,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Build the boot assets, the SD card image and the installer
         run: |
