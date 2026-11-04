@@ -9,8 +9,8 @@ radio's firmware and `wpa_supplicant`, and an installer for each stable Talos re
 and boot on a Pi 5 with Wi-Fi and Bluetooth attached (PRD milestone 2); Wi-Fi association,
 the Bluetooth pod and releases are not done yet.
 
-The kernel also carries Raspberry Pi's RP1 PWM driver, which mainline Linux 6.18 lacks, so a fan on the Pi 5's fan
-header (the Active Cooler) follows the temperature.
+The kernel also carries Raspberry Pi's RP1 PWM driver and fan speed reading, which mainline Linux 6.18 lacks, so a fan
+on the Pi 5's fan header (the Active Cooler) follows the temperature and reports its RPM.
 
 ## Images
 
