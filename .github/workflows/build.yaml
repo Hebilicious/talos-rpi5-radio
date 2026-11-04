@@ -6,7 +6,7 @@
 # also publish <release>, the tag users upgrade to.
 #
 # The kernel is the slow part (over an hour). Its image is tagged by its inputs,
-# the pkgs commit and the radio fragment, and is only built when no image with
+# the pkgs commit, the fragment and the patches, and is only built when no image with
 # that tag exists yet, so most runs reuse it.
 name: build
 
@@ -45,7 +45,7 @@ jobs:
       - id: tag
         run: |
           echo "tag=${{ steps.pins.outputs.TALOS }}-${GITHUB_SHA::7}" | tee -a "$GITHUB_OUTPUT"
-          fragment=$(sha256sum kernel/config-radio.fragment | cut -c1-12)
+          fragment=$(cat kernel/config-radio.fragment kernel/patches/* | sha256sum | cut -c1-12)
           echo "kernel-image=$IMAGE_PREFIX/kernel:pkgs-${{ steps.pins.outputs.PKGS_COMMIT }}-radio-${fragment}" | tee -a "$GITHUB_OUTPUT"
 
   kernel:
@@ -90,11 +90,13 @@ jobs:
           git clone --filter=blob:none https://github.com/siderolabs/pkgs.git _pkgs
           git -C _pkgs checkout --detach "${{ needs.pins.outputs.pkgs-commit }}"
 
-      - name: Add the radio options and run olddefconfig
+      - name: Add the patches and the options, and run olddefconfig
         if: steps.existing.outputs.found != 'true'
         working-directory: _pkgs
         run: |
           cat ../kernel/config-radio.fragment >> kernel/build/config-arm64
+          mkdir -p kernel/build/patches
+          cp ../kernel/patches/* kernel/build/patches/
           make local-kernel-build \
             TARGET_ARGS="--build-arg=KERNEL_TARGET=olddefconfig" \
             PLATFORM=linux/arm64 DEST=kernel/build

@@ -9,6 +9,9 @@ radio's firmware and `wpa_supplicant`, and an installer for each stable Talos re
 and boot on a Pi 5 with Wi-Fi and Bluetooth attached (PRD milestone 2); Wi-Fi association,
 the Bluetooth pod and releases are not done yet.
 
+The kernel also carries Raspberry Pi's RP1 PWM driver, which mainline Linux 6.18 lacks, so a fan on the Pi 5's fan
+header (the Active Cooler) follows the temperature.
+
 ## Images
 
 Published for each Talos release, public, for arm64 (`<release>` is e.g. `v1.14.5`; every CI

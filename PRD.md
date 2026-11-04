@@ -49,7 +49,7 @@ Who needs the radio:
 - Official extensions that ship kernel modules (zfs, drbd, nvidia, …): they are signed for Sidero's
   kernel and won't load on this one (R7).
 - Older Talos minor lines and pre-releases.
-- Any change to Talos's source, and any kernel change beyond the options below.
+- Any change to Talos's source, and any kernel change beyond the options below and the fan's driver (R6).
 
 ## 4. Requirements
 
@@ -60,6 +60,7 @@ Who needs the radio:
 | R3 | The Wi-Fi network name, password and country code reach `wpa_supplicant` through the machine config (an `ExtensionServiceConfig` document for the `wpa_supplicant` service), never through the image or this repository. |
 | R4 | Talos's network configuration runs DHCP on the Wi-Fi link once it associates. The link is selected with a `deviceSelector` on `driver: brcmfmac`, never by an assumed name such as `wlan0`. Ethernet stays the preferred route when both are up (a higher route metric on Wi-Fi). |
 | R5 | BlueZ runs in a privileged pod on the host network, because the kernel only creates Bluetooth sockets in the host's network namespace. Talos has no system D-Bus, so the pod runs its own `dbus-daemon` beside `bluetoothd` and shares the D-Bus socket with the pods that use it through a `hostPath` under `/var`. A workload may instead talk HCI directly, with `hostNetwork` and `NET_ADMIN`/`NET_RAW`. The image and manifests live in this repository. |
+| R6 | The fan header works: the kernel carries Raspberry Pi's RP1 PWM driver, which mainline Linux 6.18 lacks (`kernel/patches/`). Without it `pwm-fan` waits for its PWM for ever, and an Active Cooler gets no speed control. Drop the patch when a Talos release's kernel has the driver |
 | R6 | CI in this repository rebuilds the kernel, the extension, the installer and the SD card image for each release in scope (Goal 4), on GitHub's arm64 runners, and publishes them as public images on GitHub Container Registry. |
 | R7 | Nothing else about Talos changes: same Talos source, same kernel command line (including `module.sig_enforce=1`), same upgrade and rollback behaviour. Only the kernel image differs. Because each kernel build signs its modules with a key it then throws away, official extensions that ship kernel modules don't load on this kernel; that is accepted and documented in the README. |
 
@@ -109,7 +110,7 @@ PRD.md                          this document
   USERNAME=hebilicious/talos-rpi5-radio PUSH=true`. The build runs Sidero's
   `kernel-hardening-checker` filter; the new options must pass it unchanged. The compile takes
   about 75 minutes on a GitHub arm64 runner, so the image is tagged by its inputs
-  (`kernel:pkgs-<commit>-radio-<fragment hash>`) and built only when that tag is missing; other
+  (`kernel:pkgs-<commit>-radio-<hash of the fragment and patches>`) and built only when that tag is missing; other
   runs reuse it, and a whole run then takes about 8 minutes.
 - **Talos:** `make installer-base imager PLATFORM=linux/arm64 INSTALLER_ARCH=targetarch
   PKG_KERNEL=<our kernel image> REGISTRY=ghcr.io USERNAME=hebilicious/talos-rpi5-radio PUSH=true`.

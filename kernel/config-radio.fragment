@@ -15,3 +15,5 @@ CONFIG_BT_HCIUART_BCM=y
 # chip to its UART.
 CONFIG_SERIAL_DEV_BUS=y
 CONFIG_SERIAL_DEV_CTRL_TTYPORT=y
+# The fan header (kernel/patches/): pwm-fan, which the config already has, needs its PWM.
+CONFIG_PWM_RP1=y
