@@ -28,7 +28,7 @@ env:
 
 jobs:
   pins:
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-26.04-arm
     outputs:
       talos: ${{ steps.pins.outputs.TALOS }}
       pkgs: ${{ steps.pins.outputs.PKGS }}
@@ -50,7 +50,7 @@ jobs:
 
   kernel:
     needs: pins
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-26.04-arm
     timeout-minutes: 300
     env:
       KERNEL_IMAGE: ${{ needs.pins.outputs.kernel-image }}
@@ -117,7 +117,7 @@ jobs:
 
   extension:
     needs: [pins, kernel]
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-26.04-arm
     steps:
       - uses: actions/checkout@v5
 
@@ -144,7 +144,7 @@ jobs:
 
   talos:
     needs: [pins, kernel]
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-26.04-arm
     timeout-minutes: 180
     steps:
       - name: Free disk space for the build
@@ -173,7 +173,7 @@ jobs:
 
   images:
     needs: [pins, extension, talos]
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-26.04-arm
     env:
       TAG: ${{ needs.pins.outputs.tag }}
       TALOS: ${{ needs.pins.outputs.talos }}
