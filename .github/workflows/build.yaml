@@ -102,7 +102,7 @@ jobs:
             PLATFORM=linux/arm64 DEST=kernel/build
           ../kernel/check-config.sh ../kernel/config-radio.fragment kernel/build/config-arm64
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: steps.existing.outputs.found != 'true'
         with:
           name: kernel-config-arm64
@@ -221,7 +221,7 @@ jobs:
             crane tag "${{ needs.pins.outputs.kernel-image }}" "${{ needs.pins.outputs.talos }}"
           fi
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: talos-rpi5-radio-${{ needs.pins.outputs.tag }}
           # the imager compresses every output with zstd
